@@ -1,0 +1,336 @@
+library(tidyverse)
+library (dplyr)
+library(corrplot)
+library(caret)
+library(ggstatsplot)
+
+
+write.csv(donordataset, file= "C:\\Users\\eveli\\OneDrive\\Documenten\\Master Data Science and Society\\thesis\\donordataset.csv")         
+
+write.csv(donordataset, file = "C:\\Users\\eveli\\OneDrive\\Documenten\\Master Data Science and Society\\thesis project\\thesis project\\data\\donordataset.csv")
+
+length(unique(DIS1plusDIS2plusDonaties_Data_voorthesis$KeyID)) ##44036
+unique(DIS1plusDIS2plusDonaties_Data_voorthesis$Donatiestatuscode)
+
+length(unique(donordataset$KeyID)) #30560 different persons
+
+
+dataset <- DIS1plusDIS2plusDonaties_Data_voorthesis
+unique(DIS1plusDIS2plusDonaties_Data_voorthesis$DIS2_v22)
+
+donordataset <- select(dataset, KeyID, D2_v00, Einnummer, Donatiedatum,
+                       D2_responder, 
+                       TypeofDonation, Donatiestatuscode, AfgenomenVolume, volume, 
+                       Gender, Age_donation, Age_DIS2, BD, OD, hb,
+                       Registratie_Tijd, Donatie_Tijd_Start, Donatie_Tijd_Einde, WaitTime, DrawTime,
+                       VVR, VVR_duringdonation, VVR_afterdonation_inBCC, VVR_afterdonation_outBCC, 
+                       ComplicatieCode1, ComplicatieCode2, ComplicatieCode3, DIS1_v04, DIS2_v04,
+                       DIS2_v05, DIS2_v03, DIS2_v19, DIS2_v20, DIS2_v21, DIS2_v22, DIS2_v26_d, DIS2_v26_e)
+
+#EDA checking what did go wrong with the DIS2V22
+#groupdis22 <- DIS1plusDIS2plusDonaties_Data_voorthesis %>%
+  group_by(KeyID) %>%
+  filter(DIS2_v21 == 1 & DIS2_v22 != "") %>%
+  summarise(DIS2_v22, DIS2_v21, WaitTime, DrawTime, Age_donation,DIS2_v05, BD, OD, hb)
+
+
+#filling in gender with the DIS2_v03, which results in having no NA's
+#where before gender had 161316 NA's 
+donordataset <- donordataset %>%
+  mutate(Gender = replace_na(DIS2_v03))
+
+donordataset <- donordataset %>%
+  select (-Age_DIS2)
+
+donordataset <- donordataset %>%
+  select (-Einnummer)
+
+donordataset <- donordataset %>%
+  select (-DIS2_v03)
+
+donordataset <- donordataset %>%
+  select(- ComplicatieCode3)
+
+donordataset <- donordataset %>%
+  select(-DIS2_v22, -DIS2_v21, -DIS2_v20)
+
+donordataset <- donordataset %>%
+  select (-DIS1_v04)
+
+#giving classes to the variables
+factors <- donordataset %>%
+  mutate(as.factor(D2_responder, Gender, VVR, Fainted_before))
+
+factors <- c(donordataset$D2_responder, donordataset$Gender, donordataset$VVR,
+             donordataset$Fainted_before)
+as.factor(factors)
+
+donordataset$TypeofDonation <- as.factor(donordataset$TypeofDonation)
+donordataset$D2_responder <- as.factor(donordataset$D2_responder)
+donordataset$Gender <- as.factor(donordataset$Gender)
+donordataset$VVR <- as.factor(donordataset$VVR)
+donordataset$Fainted_before <- as.factor(donordataset$Fainted_before)
+
+# filling in the VVR variable  ###ergens hier gaat het fout met aantal VVR's
+donordataset<- donordataset %>%
+  mutate(VVR = ifelse(VVR_duringdonation == 1, 1, 0 & 
+                        ifelse(VVR_afterdonation_inBCC == 1, 1, 0 &
+                                 ifelse(VVR_afterdonation_outBCC == 1, 1, 0))))
+
+table(donordataset$VVR)
+
+DIS1plusDIS2plusDonaties_Data_voorthesis<- DIS1plusDIS2plusDonaties_Data_voorthesis %>%
+  mutate(VVR = ifelse(VVR_duringdonation == 1, 1, 0 & 
+                        ifelse(VVR_afterdonation_inBCC == 1, 1, 0 &
+                                 ifelse(VVR_afterdonation_outBCC == 1, 1, 0))))
+
+donordataset <- donordataset %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1111 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1112 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1113 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1211 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1212 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1213 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1311 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1312 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1411 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1412 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1413 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1511 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1512 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode2 == 1612 ,1,  VVR))
+
+donordataset <- donordataset %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1111 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1112 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1113 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1211 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1212 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1213 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1311 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1312 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1411 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1412 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1413 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1511 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1512 ,1,  VVR)) %>%
+  mutate(VVR= ifelse(ComplicatieCode1 == 1612 ,1,  VVR))
+
+
+#filling all values of same person with the DIS2 data.
+donordataset <- donordataset%>%
+  group_by(KeyID)%>%
+  fill(DIS2_Datum_Deelname, .direction="up") %>%
+  fill(DIS2_v04, .direction="up") %>%
+  fill(Gender, .direction="up") %>%
+  fill(DIS2_v05, .direction="up") %>%
+  fill(DIS2_v19, .direction="up") %>%
+  fill(DIS2_v26_d, .direction="up") %>%
+  fill(DIS2_v26_e, .direction="up")
+
+#deleting the row with DIS data because data is filled in for all other rows
+donordataset <- donordataset %>%
+  mutate(D2_v00 = replace_na( D2_v00, 4))
+
+donordataset <- donordataset %>%
+  filter(D2_v00 == "4")
+
+donordataset <- donordataset %>%
+  select(-D2_v00)
+
+
+#deleting rows with waittime and drawtime is NA
+donordataset <- donordataset %>%
+  mutate(WaitTime = replace_na(WaitTime, 4)) %>%
+  mutate(DrawTime = replace_na(DrawTime, 4)) %>%
+  filter(WaitTime != "4") %>% 
+  filter(DrawTime != "4") #706150, now 419716
+
+
+#getting rid of the negative values in Waittime
+donordataset <- donordataset %>%
+  mutate(WaitTime = abs(WaitTime))
+
+#deleting outliers based on sanquins requirements
+#deleted the rows with a hb value below 7.8 and rows with age below 18 and above 79
+# and weight below 50
+donordataset <- donordataset %>%
+  filter(Age_donation >= 18) %>%
+  filter(Age_donation <= 79) %>%
+  filter(hb >7.8) %>%
+  filter(DIS2_v05 >= 50) ## first 882054, after 706150
+
+donordataset <- donordataset %>%
+  filter(TypeofDonation != 9)
+
+donordataset <- donordataset %>%
+  filter(TypeofDonation != 0)
+
+#renaming column names
+donordataset <- donordataset %>%
+  rename(Length = DIS2_v04)
+
+donordataset <- donordataset %>%
+  rename(Weight = DIS2_v05, Fainted_before = DIS2_v19, 
+         Donating_experience1 = DIS2_v26_d, Donating_experience2 = DIS2_v26_e)
+
+#because of weight and length being correlated, making a BMI column
+donordataset <- donordataset %>%
+  mutate(BMI = Weight/((Length/100)^2), .before= Weight) %>%
+  mutate(BMI = round(BMI, 1))
+
+donordataset <- donordataset %>%
+  select(-Weight, -Length)
+
+#deleting rows with NA value BD and OD, because same number of VVR's after this.
+donordataset <- donordataset %>%
+  mutate(BD = replace_na(BD, 4)) %>%
+  filter(BD != "4")
+
+donordataset <- donordataset %>%
+  mutate(OD = replace_na(OD, 4)) %>%
+  filter(OD != "4")
+
+
+#checking the means when VVR is experienced                    
+VVR_groups <- donordataset %>%
+  group_by(VVR) %>%
+  summarise(mean_OD = mean(OD, na.rm = TRUE),
+            mean_BD = mean(BD, na.rm = TRUE),
+            mean_hb = mean(hb, na.rm = TRUE),
+            mean_Age = mean(Age_donation, na.rm= TRUE))
+
+length(unique(donordataset$KeyID)) # there are 30560 different persons in this dataset
+
+
+VVR_yes <- donordataset %>%
+  group_by(KeyID) %>%
+  filter(VVR == 1)  ##648 entries with a VVR
+
+table(donordataset$VVR)
+
+Donatiestatuscodeees <- donordataset %>%
+  filter(Donatiestatuscode == "")
+
+
+length(unique(VVR_yes$KeyID)) ## from the 648 entries with VVR, only 581 persons
+## experienced it, so some persons have experienced a VVR multiple times. 
+## all of the VVR's are during donation.
+
+length(unique(donordataset$KeyID))
+#outliers in the data
+
+#only keeping the first rows of the same keyid's 
+mean_duplicates <- donordataset %>%
+  group_by(KeyID) %>%
+  filter(row_number()==1)
+
+table(donordataset$Gender)
+
+#filling in the mean of variables by first looking at mean of woman and
+#mean of men and then filling those NA values with that values.
+mean_gender_length <- mean_duplicates %>%
+  group_by(Gender) %>%
+  summarize(mean = mean(DIS2_v04, na.rm = TRUE))##men = 182.4658, woman= 170.1584
+
+mean_gender_weight <-mean_duplicates %>%
+  group_by(Gender) %>%
+  summarize(mean = mean(DIS2_v05, na.rm = TRUE))##men = 86.07256, woman= 72.97390
+
+
+#filling in the missing values with the mean
+##filling in missing values of length
+donordataset<- donordataset %>%
+  mutate( DIS2_v04 = if_else(is.na(DIS2_v04) & Gender == 1,183,
+                             DIS2_v04 )) %>%
+  mutate(DIS2_v04 = if_else(is.na(DIS2_v04) & Gender == 2, 170,
+                   DIS2_v04 ))
+
+
+#filling in missing value of ever fainted with 0, because only 1000 to fill in
+donordataset <- donordataset %>%
+  mutate(DIS2_v19 = replace_na(DIS2_v19, 0))
+
+#filling in missing values of "bloed geven vind ik vervelend-leuk" with the median
+median(donordataset$DIS2_v26_d, na.rm = TRUE) # =2
+median(donordataset$DIS2_v26_e, na.rm = TRUE) #=4
+
+donordataset <- donordataset %>%
+  mutate(DIS2_v26_d = replace_na(DIS2_v26_d, 2)) %>%
+  mutate(DIS2_v26_e = replace_na(DIS2_v26_e, 4)) 
+
+#filling in missing values of afgenomen bloed (only 3), with median
+median(donordataset$AfgenomenVolume, na.rm = TRUE) #=502
+
+donordataset <- donordataset %>% 
+  mutate(AfgenomenVolume = replace_na(AfgenomenVolume, 502))
+
+#filling in empty values of Donationstatuscode with M when 0 for AfgenomenVolume
+rm(testset)
+
+donordataset <- donordataset %>%
+  mutate(Donatiestatuscode = ifelse(AfgenomenVolume == 0, "M", Donatiestatuscode))
+
+donordataset <- donordataset %>%
+  mutate(Donatiestatuscode = ifelse(volume == 0, "M", Donatiestatuscode))
+
+
+boxplot(donordataset$BD, donordataset$OD)
+boxplot (donordataset$DIS2_v04)
+boxplot(donordataset$DIS2_v05)
+
+
+##distribution of the data
+table(donordataset$Gender)  #1 is male, 2 is female. 216631  males, 149461  females
+table(donordataset$VVR) #599 times a VVR, 365493     not.
+
+as.factor(donordataset$VVR)
+plot(donordataset$VVR)
+
+table(donordataset$TypeofDonation)
+
+#check how many VVR's for blood and plasma donors
+balanceTypeofDonation <- donordataset %>%
+  group_by(TypeofDonation) %>%
+  filter(VVR == 1)
+
+table(balanceTypeofDonation$TypeofDonation) # 1: 342, 2: 257
+
+counts <- table(balanceTypeofDonation$TypeofDonation)
+barplot(counts, main = "Number of VVR's per donation type",  xlab = "Type of Donation", ylab = "Number of VVR's", 
+        names.arg = c("Blood donors", "Plasma donors") , col = "blue", ylim = c(0,350))
+
+
+mean(donordataset$WaitTime, na.rm = TRUE) #mean of waittime = 21.60609 minutes
+mean(donordataset$DrawTime, na.rm=TRUE) #mean of drawing time is 19.5586 minutes
+mean(donordataset$Age_donation, na.rm=TRUE) #mean age of donation = 51.2217
+mean(donordataset$BD, na.rm=TRUE) #mean bd = 133.441
+mean(donordataset$OD, na.rm=TRUE) #mean od = 78.81627
+mean(donordataset$hb, na.rm=TRUE) #mean hb = 8.998131
+
+
+donordataset$VVR <- as.numeric(donordataset$VVR)
+donordataset$OD <- as.numeric(donordataset$OD)
+donordataset$KeyID <- as.numeric(donordataset$KeyID)
+
+table(donordataset$Gender)
+
+#checking NA values 
+sum(is.na(donordataset$AfgenomenVolume)) # 0
+sum(is.na(donordataset$volume)) # no missing values
+sum(is.na(donordataset$Gender)) # no missing values
+sum(is.na(donordataset$Age_donation)) #0
+sum(is.na(donordataset$BD)) #0
+sum(is.na(donordataset$OD)) #0
+sum(is.na(donordataset$hb)) #0
+sum(is.na(donordataset$WaitTime)) #0
+sum(is.na(donordataset$DrawTime)) #0
+sum(is.na(donordataset$DIS2_v04)) #0
+sum(is.na(donordataset$DIS2_v05)) #0
+sum(is.na(donordataset$DIS2_v19)) #0
+sum(is.na(donordataset$DIS2_v26_d)) #0 Bloed geven vind ik prettig-vervelend
+sum(is.na(donordataset$DIS2_v26_e)) #0 Bloed geven vind ik vervelend / leuk
+
+
+table(donordataset$VVR)
+
