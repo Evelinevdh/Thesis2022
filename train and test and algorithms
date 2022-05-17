@@ -1,0 +1,372 @@
+library(tidyverse)
+library (dplyr)
+library(corrplot)
+library(caret)
+library(ggstatsplot)
+library(healthcareai) # to split data with grouping column Keyid
+library(ROSE)
+library(mltools)
+library(data.table)
+library(kernlab)
+
+boxplot(donordataset$AfgenomenVolume, ylab= "AfgenomenVolume") $out
+boxplot(donordataset$volume, ylab="Volume")$out
+boxplot(donordataset$Age_donation, ylab="Age")$out
+boxplot(donordataset$BD, ylab ="Upper blood pressure")$out
+boxplot(donordataset$OD, ylab = "Under blood pressure")$out
+boxplot(donordataset$hb, ylab = "Hemoglobine level")$out
+boxplot(donordataset$WaitTime, ylab= "Waittime")$out
+boxplot(donordataset$DrawTime, ylab= "Drawtime")$out
+boxplot(donordataset$Length, ylab= "Length")$out
+boxplot(donordataset$Weight, ylab = "Weight")$out
+
+
+
+## renaming variables and making correlation plot of predictor variables
+cordata<- donordataset
+cordata <- cordata %>%
+  rename(Age = Age_donation, "Waiting time" = WaitTime, "Draw time" = DrawTime,
+         "Fainted before" = Fainted_before, "Type of donation" = TypeofDonation, 
+         "Donation experience" = Donating_experience1)
+
+numericalvariables <- cordata %>%
+  select(Gender, Age, `Waiting time` , `Draw time`, BMI , `Fainted before` ,
+         `Type of donation`, `Donation experience`)
+
+correlationplot = cor(numericalvariables, use = "pairwise.complete.obs" )
+corrplot(correlationplot)
+
+
+#algorithms
+set.seed(123)
+
+traintestset <- donordataset %>%
+  split_train_test(VVR, .7, grouping_col = KeyID)
+
+trainsetbaseline <- as.data.frame(traintestset$train) ##291891 entries
+testset <- as.data.frame(traintestset$test) ##127484 entries
+
+trainset <- ovun.sample(VVR~., data = trainsetbaseline, method = "both", N = 10000)
+trainset <- trainset$data 
+testset$VVR <- as.factor(testset$VVR)
+trainset$VVR <- as.factor(trainset$VVR)
+table(trainset$VVR)
+
+train_control <- trainControl(method="cv", number=10)
+donordataset$TypeofDonation <- as.factor(donordataset$TypeofDonation)
+
+#logistic regression models, because the categorical features are set as factors
+#one hot encoding is being done automatically
+baselinemodellogistic <- train(VVR~  Gender + Age_donation + BMI + 
+                               Donating_experience1 + TypeofDonation, 
+                             data = trainset, family = binomial, method = "glm", 
+                             trControl = train_control)
+
+summary(baselinemodellogistic)
+predictedbaselinelr <- predict(baselinemodellogistic, testset)
+confusionMatrix(testset$VVR, predictedbaselinelr ,mode = "everything", positive = "1")
+baselinemodellogistic
+varImp(baselinemodellogistic)
+
+
+#waittime and drawtime logistic
+completemodellogistic <- train(VVR ~ Gender + Age_donation + BMI + 
+                                 Donating_experience1 + Fainted_before +
+                                 WaitTime + DrawTime + TypeofDonation,
+                     data=trainset, family=binomial, method = "glm", 
+                     trControl = train_control )
+
+summary(completemodellogistic)
+pcompletemodel <- predict(completemodellogistic, testset)
+confusionMatrix(testset$VVR, mode = "everything", pcompletemodel, positive = "1")
+completemodellogistic
+plot(varImp(completemodellogistic), main = "Variable importance plot third model logistic regression", 
+     xlab = "Importance (%)")
+
+#fainted before model logistic regression
+faintedbeforemodellogistic <- train(VVR ~ Gender + Age_donation + BMI + 
+                                      Donating_experience1 + Fainted_before +
+                                      TypeofDonation,
+                     data=trainset, family=binomial,method = "glm", 
+                     trControl = train_control)
+
+faintedbeforemodellogistic
+summary(faintedbeforemodellogistic)
+pfaintedbeforemodel <- predict(faintedbeforemodellogistic, testset)
+confusionMatrix(testset$VVR, pfaintedbeforemodel,mode = "everything", positive = "1")
+varImp(faintedbeforemodellogistic)
+
+
+
+
+###support vector with caret ###############################
+
+svmbaselinemodel <- train(VVR ~ Gender + Age_donation + BMI + 
+                            Donating_experience1 + TypeofDonation, 
+                          data = trainset, method = "svmLinear", 
+                     trControl = train_control,  
+              preProcess = c("center","scale"))
+
+pbaselinemodellinear <- predict(svmbaselinemodel, testset)
+confusionMatrix(testset$VVR, pbaselinemodellinear, positive = "1")
+
+svmbaselinemodel
+plot(svmbaselinemodel)
+varImp(svmbaselinemodel)
+
+##baseline non linear
+svmbaselinemodelnonlinear <- train(VVR~  Gender + Age_donation + BMI + 
+                                  Donating_experience1 + TypeofDonation, 
+                                  data = trainset, method = "svmRadial", 
+                                  trControl = train_control,  
+                                  preProcess = c("center","scale"))
+svmbaselinemodelnonlinear
+pbaselinemodelnonlinear <- predict(svmbaselinemodelnonlinear, testset)
+confusionMatrix(testset$VVR, pbaselinemodelnonlinear, mode = "everything", positive = "1")
+
+
+plot(svmbaselinemodelnonlinear, main = "Accuracy plot svm baseline model")
+varImp(svmbaselinemodelnonlinear)
+
+saveRDS(svmbaselinemodelnonlinear, "svmbaselinemodelnonlinear.rds")
+svmbaselinemodelnonlinear <- readRDS("svmbaselinemodelnonlinear.rds")
+
+factor(donordataset$VVR)
+
+####model with faintedbefore
+svmfaintedbeforemodel <- train(VVR ~ Gender + Age_donation + BMI + 
+                            Donating_experience1 + Fainted_before +
+                            TypeofDonation, 
+                       data = trainset, method = "svmRadial", 
+                       trControl = train_control,  
+                       preProcess = c("center","scale"))
+psvmfaintedbefore <- predict(svmfaintedbeforemodel, testset)
+confusionMatrix(testset$VVR, psvmfaintedbefore, mode = "everything", positive = "1")
+
+svmfaintedbeforemodel
+plot(svmfaintedbeforemodel, main = "Accuracy plot fainted before model" )
+varImp(svmfaintedbeforemodel)
+
+
+
+table(trainset$Donatiestatuscode)
+
+##model with waittime and drawtime variables
+svmcompletemodel <- train(VVR ~ Gender + Age_donation + BMI + 
+                            Donating_experience1 + Fainted_before +
+                            WaitTime + DrawTime + TypeofDonation, 
+                          data = trainset, method = "svmRadial", 
+                          trControl = train_control,  
+                          preProcess = c("center","scale"))
+
+psvmcomplete <- predict(svmcompletemodel, testset)
+confusionMatrix(testset$VVR, psvmcomplete, mode = "everything", positive = "1")
+svmcompletemodel
+plot(svmcompletemodel, main = "Accuracy plot Wait and draw time")
+plot(varImp(svmcompletemodel), main = "Variable importance plot third model svm", 
+     xlab = "Importance (%)")
+
+###dataset for only the blooddonors#######################################
+
+blooddataset <- donordataset %>%
+  filter(TypeofDonation == 1)
+table(blooddataset$VVR)
+
+traintestsetblood <- blooddataset %>%
+  split_train_test(VVR, .7, grouping_col = KeyID)
+
+trainsetbaselineblood <- as.data.frame(traintestsetblood$train) ##291891 entries
+testsetblood <- as.data.frame(traintestsetblood$test) ##127484 entries
+
+trainsetblood <- ovun.sample(VVR~., data = trainsetbaselineblood, method = "both", N = 10000)
+trainsetblood <- trainsetblood$data 
+testsetblood$VVR <- as.factor(testsetblood$VVR)
+trainsetblood$VVR <- as.factor(trainsetblood$VVR)
+
+#baseline model blood
+baselinemodellogisticblood <- train(VVR~ Gender + Age_donation + BMI + 
+                                      Donating_experience1, 
+                             data = trainsetblood, family = binomial, method = "glm", 
+                             trControl = train_control)
+
+summary(baselinemodellogisticblood)
+predictedbaselinelrblood <- predict(baselinemodellogisticblood, testsetblood)
+confusionMatrix(testsetblood$VVR, predictedbaselinelrblood, mode = "everything", positive = "1")
+baselinemodellogisticblood
+varImp(baselinemodellogisticblood)
+
+#complete model blood
+set.seed(123)
+completemodellogisticblood <- train(VVR ~ Gender + Age_donation + BMI + 
+                                      Donating_experience1 + Fainted_before +
+                                      WaitTime + DrawTime,
+                                     data=trainsetblood, family=binomial, method = "glm", 
+                                     trControl = train_control)
+
+summary(completemodellogisticblood)
+pcompletemodelblood <- predict(completemodellogisticblood, testsetblood)
+confusionMatrix(testsetblood$VVR, pcompletemodelblood , mode = "everything", positive = "1")
+completemodellogisticblood
+plot(varImp(completemodellogisticblood), main = "Variable importance plot third model logistic regression for blood donors", 
+     xlab = "Importance (%)")
+
+#faintedbefore model blood
+faintedmodellogisticblood <- train(VVR ~ Gender + Age_donation + BMI + 
+                                      Donating_experience1 + Fainted_before,
+                                     data=trainsetblood, family=binomial, method = "glm", 
+                                     trControl = train_control)
+
+summary(faintedmodellogisticblood)
+pfaintedbeforemodelblood <- predict(faintedmodellogisticblood, testsetblood)
+confusionMatrix(testsetblood$VVR, pfaintedbeforemodelblood, mode = "everything", positive = "1")
+faintedmodellogisticblood
+varImp(faintedmodellogisticblood)
+
+
+
+#################plasma model ################################################
+
+plasmadataset <- donordataset %>%
+  filter(TypeofDonation == 2)
+table(plasmadataset$VVR)
+
+traintestsetplasma <- plasmadataset %>%
+  split_train_test(VVR, .7, grouping_col = KeyID)
+
+trainsetbaselineplasma <- as.data.frame(traintestsetplasma$train) ##291891 entries
+testsetplasma <- as.data.frame(traintestsetplasma$test) ##127484 entries
+
+trainsetplasma <- ovun.sample(VVR~., data = trainsetbaselineplasma, method = "both", N = 10000)
+trainsetplasma <- trainsetplasma$data 
+testsetplasma$VVR <- as.factor(testsetplasma$VVR)
+trainsetplasma$VVR <- as.factor(trainsetplasma$VVR)
+table(trainsetplasma$VVR)
+
+#baseline model plasma
+baselinemodellogisticplasma <- train(VVR~  Gender + Age_donation + BMI + 
+                                       Donating_experience1, 
+                                  data = trainsetplasma, family = binomial, method = "glm", 
+                                  trControl = train_control)
+
+summary(baselinemodellogisticplasma)
+predictedbaselinelrplasma <- predict(baselinemodellogisticplasma, testset)
+confusionMatrix(testset$VVR, predictedbaselinelrplasma, mode = "everything", positive = "1")
+baselinemodellogisticplasma
+varImp(baselinemodellogisticplasma)
+
+
+#waittime and drawtime plasma model
+completemodellogisticplasma <- train(VVR ~ Gender + Age_donation + BMI + 
+                                       Donating_experience1 + Fainted_before +
+                                       WaitTime + DrawTime,
+                             data=trainsetplasma, family=binomial, method = "glm", 
+                             trControl = train_control)
+
+summary(completemodellogisticplasma)
+pcompletemodelplasma <- predict(completemodellogisticplasma, testsetplasma)
+confusionMatrix(testsetplasma$VVR, pcompletemodelplasma, mode = "everything", positive = "1")
+completemodellogisticplasma
+plot(varImp(completemodellogisticplasma), main = "Variable importance plot third model logistic regression for plasma donors", 
+     xlab = "Importance (%)")
+
+
+
+faintedbeforemodellogisticplasma <- train(VVR ~ Gender + Age_donation + BMI + 
+                                       Donating_experience1 + Fainted_before,
+                             data=trainsetplasma, family=binomial, method = "glm", 
+                             trControl = train_control)
+
+summary(faintedbeforemodellogisticplasma)
+pfaintedbeforemodelplasma <- predict(faintedbeforemodellogisticplasma, testsetplasma)
+confusionMatrix(testsetplasma$VVR, pfaintedbeforemodelplasma, mode = "everything", positive = "1")
+faintedbeforemodellogisticplasma
+varImp(faintedbeforemodellogisticplasma)
+
+### support vector machine for blood and plasma #############################
+
+##baseline non linear blood
+svmbaselinemodelnonlinearblood <- train(VVR~  Gender + Age_donation + BMI + 
+                                          Donating_experience1, 
+                                   data = trainsetblood, method = "svmRadial", 
+                                   trControl = train_control,  
+                                   preProcess = c("center","scale"))
+svmbaselinemodelnonlinearblood
+pbaselinemodelnonlinearblood <- predict(svmbaselinemodelnonlinearblood, testsetblood)
+confusionMatrix(testsetblood$VVR, pbaselinemodelnonlinearblood, mode = "everything", positive = "1")
+plot(svmbaselinemodelnonlinearblood, main = "Accuracy plot baseline blood donors")
+varImp(svmbaselinemodelnonlinearblood)
+
+saveRDS(svmbaselinemodelnonlinear, "svmbaselinemodelnonlinear.rds")
+svmbaselinemodelnonlinear <- readRDS("svmbaselinemodelnonlinear.rds")
+
+####model with fainted before blood
+svmfaintedbeforemodelblood <- train(VVR ~ Gender + Age_donation + BMI + 
+                                 Donating_experience1 + Fainted_before,
+                          data = trainsetblood, method = "svmRadial", 
+                          trControl = train_control,  
+                          preProcess = c("center","scale"))
+psvmfaintedbeforeblood <- predict(svmfaintedbeforemodelblood, testsetblood)
+confusionMatrix(testsetblood$VVR, psvmfaintedbeforeblood, mode = "everything", positive = "1")
+
+svmfaintedbeforemodelblood
+plot(svmfaintedbeforemodelblood, main = "Accuracy plot fainted before blood donors")
+varImp(svmfaintedbeforemodelblood)
+
+
+##model with waittime and drawtime variables blood
+svmcompletemodelblood <- train(VVR ~ Gender + Age_donation + BMI + 
+                                 Donating_experience1 + Fainted_before +
+                                 WaitTime + DrawTime, 
+                          data = trainsetblood, method = "svmRadial", 
+                          trControl = train_control,  
+                          preProcess = c("center","scale"))
+
+psvmcompleteblood <- predict(svmcompletemodelblood, testsetblood)
+confusionMatrix(testsetblood$VVR, psvmcompleteblood,mode = "everything", positive = "1")
+plot(varImp(svmcompletemodelblood), main = "Variable importance plot third model svm for blood donors", 
+          xlab = "Importance (%)")
+
+###svm models plasma######################
+##baseline non linear plasma
+svmbaselinemodelnonlinearplasma <- train(VVR ~ Gender + Age_donation + BMI + 
+                                           Donating_experience1, 
+                                        data = trainsetplasma, method = "svmRadial", 
+                                        trControl = train_control,  
+                                        preProcess = c("center","scale"))
+svmbaselinemodelnonlinearplasma
+pbaselinemodelnonlinearplasma <- predict(svmbaselinemodelnonlinearplasma, testsetplasma)
+confusionMatrix(testsetplasma$VVR, pbaselinemodelnonlinearplasma, mode = "everything", positive = "1")
+
+plot(svmbaselinemodelnonlinearplasma, main = "Accuracy plot baseline plasma donors")
+varImp(svmbaselinemodelnonlinearplasma)
+
+####model faintedbefore  plasma
+svmfaintedbeforemodelplasma <- train(VVR ~ Gender + Age_donation + BMI + 
+                                  Donating_experience1 + Fainted_before, 
+                               data = trainsetplasma, method = "svmRadial", 
+                               trControl = train_control,  
+                               preProcess = c("center","scale"))
+psvmfaintedbeforeplasma <- predict(svmfaintedbeforemodelplasma, testsetplasma)
+confusionMatrix(testsetplasma$VVR, psvmfaintedbeforeplasma, mode = "everything", positive = "1")
+
+svmfaintedbeforemodelplasma
+plot(svmfaintedbeforemodelplasma, main = "Accuracy plot fainted before plasma donors")
+varImp(svmfaintedbeforemodelplasma)
+
+
+##model with waittime and draw time plasma
+svmcompletemodelplasma <- train(VVR ~ Gender + Age_donation + BMI + 
+                                  Donating_experience1 + Fainted_before +
+                                  WaitTime + DrawTime, 
+                               data = trainsetplasma, method = "svmRadial", 
+                               trControl = train_control,  
+                               preProcess = c("center","scale"))
+
+psvmcompleteplasma <- predict(svmcompletemodelplasma, testsetplasma)
+confusionMatrix(testsetplasma$VVR, psvmcompleteplasma, mode = "everything", positive = "1")
+
+plot(svmcompletemodelplasma, main = "Accuracy plot wait and draw time plasma donors")
+svmcompletemodelplasma
+varImp(svmcompletemodelplasma)
+plot(varImp(svmcompletemodelplasma), main = "Variable importance plot third model svm for plasma donors", 
+     xlab = "Importance (%)")
